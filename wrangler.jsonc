@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // O nome precisa ser igual ao do app no painel da Cloudflare
+  "name": "formula-80",
+  "compatibility_date": "2026-10-13",
+  "assets": {
+    "directory": "./dist",
+    // Rotas como /shows/123 devolvem o index.html (React Router)
+    "not_found_handling": "single-page-application"
+  }
+}

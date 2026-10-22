@@ -23,14 +23,17 @@ npm run build      # gera dist/
 npm run preview    # serve o build com o PWA ativo
 ```
 
-Para testar no tablet é preciso HTTPS: Service Worker, Wake Lock e instalação só funcionam em https ou localhost. O caminho mais simples é publicar no Cloudflare Pages (abaixo).
+Para testar no tablet é preciso HTTPS: Service Worker, Wake Lock e instalação só funcionam em https ou localhost. O caminho mais simples é publicar na Cloudflare (abaixo).
 
-## Publicar (Cloudflare Pages)
+## Publicar (Cloudflare Workers)
 
-1. Suba o repositório no GitHub.
-2. Cloudflare → Workers & Pages → Create → Pages → conectar o repositório.
-3. Build command: `npm run build` · Output directory: `dist`.
-4. Custom domains → `app.formula80.com.br` (depois de registrar o domínio no Registro.br e apontar o DNS para a Cloudflare).
+O `wrangler.jsonc` já está configurado (arquivos estáticos de `dist/`, com fallback de SPA).
+
+1. Cloudflare → **Workers & Pages** → **Create application** → **Import a repository** → GitHub → `awazago/formula-80`.
+2. Nome do projeto: **`formula-80`** (precisa ser igual ao `name` do `wrangler.jsonc`).
+3. Build command: `npm run build` · Deploy command: `npx wrangler deploy`.
+4. **Save and Deploy**. Cada push na `main` publica sozinho.
+5. Domínio próprio: no app → **Settings → Domains & Routes → Add → Custom domain** → `app.formula80.com.br`.
 
 ## Instalar no tablet
 
