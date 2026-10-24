@@ -25,7 +25,7 @@ export function loadPdf(songId: string): Promise<PDFDocumentProxy> {
   const entry: Entry = { doc: Promise.resolve(null as never) }
   entry.doc = (async () => {
     const file = await db.files.get(songId)
-    if (!file) throw new Error('PDF não encontrado neste dispositivo')
+    if (!file) throw new Error('PDF ainda não baixado neste aparelho. Aguarde a sincronização.')
     const data = new Uint8Array(await file.blob.arrayBuffer())
     entry.task = pdfjs.getDocument({ data })
     return entry.task.promise

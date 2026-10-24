@@ -2,10 +2,25 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   // O nome precisa ser igual ao do app no painel da Cloudflare
   "name": "formula-80",
+  "main": "./worker/index.ts",
   "compatibility_date": "2026-10-13",
   "assets": {
     "directory": "./dist",
     // Rotas como /shows/123 devolvem o index.html (React Router)
-    "not_found_handling": "single-page-application"
-  }
+    "not_found_handling": "single-page-application",
+    // Só a API passa pelo Worker; o resto é arquivo estático
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "formula-80-db",
+      "database_id": "fc0177f1-b4b4-43f0-b2e3-1c1b8bb4e7a7",
+      "migrations_dir": "worker"
+    }
+  ],
+  "kv_namespaces": [
+    { "binding": "PDFS", "id": "69674dae6f4c451a9d62d89c537e8efd" }
+  ],
+  "observability": { "enabled": true }
 }

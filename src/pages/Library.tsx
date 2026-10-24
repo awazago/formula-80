@@ -1,12 +1,12 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { addSongFromFile, db, deleteSong, formatDuration, parseDuration, type Song } from '../lib/db'
+import { addSongFromFile, db, deleteSong, formatDuration, isVisible, parseDuration, replaceSongPdf, updateSong, type Song } from '../lib/db'
 import { forgetPdf } from '../lib/pdf'
 import { exportBackup, importBackup } from '../lib/backup'
 
 export function Library() {
-  const songs = useLiveQuery(() => db.songs.orderBy('title').toArray(), [])
+  const songs = useLiveQuery(() => db.songs.orderBy('title').filter(isVisible).toArray(), [])
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [busy, setBusy] = useState('')
@@ -98,7 +98,7 @@ export function Library() {
               <Link to={`/palco/musica/${s.id}`} className="min-w-0 flex-1">
                 <div className="truncate font-medium">{s.title}</div>
                 <div className="truncate text-sm text-zinc-400">
-                  {[s.artist, s.key && `Tom ${s.key}`, formatDuration(s.durationSec), s.patch && `🎹 ${s.patch}`].filter(Boolean).join(' · ')}
+                  {[s.artist, s.key && `Tom ${s.key}`, formatDuration(s.durationSec), s.patch && `🎹 ${s.patch}`, s.pdfDirty ? '⬆ enviando PDF' : (s.remoteFileVersion ?? 0) > (s.fileVersion ?? 0) ? '⬇ baixando PDF' : ''].filter(Boolean).join(' · ')}
                 </div>
               </Link>
               <button className="btn" onClick={() => setEditing(editing === s.id ? null : s.id)}>Editar</button>
@@ -126,7 +126,7 @@ function SongForm({ song, onDone }: { song: Song; onDone: () => void }) {
     setForm({ ...form, [k]: e.target.value })
 
   async function save() {
-    await db.songs.update(song.id, {
+    await updateSong(song.id, {
       title: form.title.trim() || song.title,
       artist: form.artist.trim(),
       key: form.key.trim(),
@@ -134,7 +134,6 @@ function SongForm({ song, onDone }: { song: Song; onDone: () => void }) {
       durationSec: parseDuration(form.duration),
       patch: form.patch.trim(),
       notes: form.notes,
-      updatedAt: Date.now(),
     })
     onDone()
   }
@@ -169,8 +168,7 @@ function SongForm({ song, onDone }: { song: Song; onDone: () => void }) {
             e.target.value = ''
             if (!f) return
             forgetPdf(song.id)
-            await db.files.put({ songId: song.id, blob: f })
-            await db.songs.update(song.id, { fileName: f.name, updatedAt: Date.now() })
+            await replaceSongPdf(song.id, f)
           }} />
       </div>
     </div>

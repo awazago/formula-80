@@ -10,27 +10,42 @@ import {
   SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { db, formatDuration, formatTotal, uid, type Block, type SetEntry, type Show, type Song } from '../lib/db'
+import { db, formatDuration, formatTotal, isVisible, saveShow, uid, type Block, type SetEntry, type Show, type Song } from '../lib/db'
 
 const LIB_PREFIX = 'lib:'
 
 export function ShowEditor() {
   const { id } = useParams()
   const stored = useLiveQuery(() => db.shows.get(id!), [id])
-  const songs = useLiveQuery(() => db.songs.orderBy('title').toArray(), [])
+  const songs = useLiveQuery(() => db.songs.orderBy('title').filter(isVisible).toArray(), [])
   const [show, setShow] = useState<Show | null>(null)
+  const dragging = useRef(false)
+  const lastEditAt = useRef(0)
 
-  // Carrega o show do banco uma vez; daqui em diante o estado local é a fonte
+  // O estado local é a fonte durante a edição. Só recarrega do banco ao abrir
+  // ou quando chega uma versão de outro integrante: nunca com alteração local
+  // pendente, durante um arraste ou logo após uma edição feita aqui.
   useEffect(() => {
-    if (stored && (!show || show.id !== stored.id)) setShow(stored)
-  }, [stored, show])
+    if (!stored || stored.deleted) return
+    setShow((cur) => {
+      if (!cur || cur.id !== stored.id) return stored
+      if (stored.dirty || dragging.current || Date.now() - lastEditAt.current < 3000) return cur
+      return stored.updatedAt !== cur.updatedAt ? stored : cur
+    })
+  }, [stored])
 
-  if (stored === null) return <p className="p-8 text-center text-zinc-400">Show não encontrado. <Link to="/shows" className="underline">Voltar</Link></p>
+  if (stored === null || stored?.deleted) return <p className="p-8 text-center text-zinc-400">Show não encontrado. <Link to="/shows" className="underline">Voltar</Link></p>
   if (!show || !songs) return <p className="p-8 text-center text-zinc-500">Carregando…</p>
-  return <Editor show={show} setShow={setShow} songs={songs} />
+  const edit = (next: Show) => {
+    lastEditAt.current = Date.now()
+    setShow(next)
+  }
+  return <Editor show={show} setShow={edit} songs={songs} dragging={dragging} />
 }
 
-function Editor({ show, setShow, songs }: { show: Show; setShow: (s: Show) => void; songs: Song[] }) {
+function Editor({
+  show, setShow, songs, dragging,
+}: { show: Show; setShow: (s: Show) => void; songs: Song[]; dragging: React.RefObject<boolean> }) {
   const songMap = useMemo(() => new Map(songs.map((s) => [s.id, s])), [songs])
   const [activeBlockId, setActiveBlockId] = useState(show.blocks[0]?.id ?? '')
   const [dragId, setDragId] = useState<string | null>(null)
@@ -41,7 +56,7 @@ function Editor({ show, setShow, songs }: { show: Show; setShow: (s: Show) => vo
   function save(next: Partial<Show>) {
     const updated = { ...show, ...next, updatedAt: Date.now() }
     setShow(updated)
-    db.shows.put(updated)
+    saveShow(updated)
   }
   const setBlocks = (b: Block[], persist = true) => (persist ? save({ blocks: b }) : setShow({ ...show, blocks: b }))
 
@@ -57,6 +72,7 @@ function Editor({ show, setShow, songs }: { show: Show; setShow: (s: Show) => vo
 
   function onDragStart(e: DragStartEvent) {
     snapshot.current = blocks
+    dragging.current = true
     setDragId(String(e.active.id))
   }
 
@@ -86,6 +102,7 @@ function Editor({ show, setShow, songs }: { show: Show; setShow: (s: Show) => vo
 
   function onDragEnd({ active, over }: DragEndEvent) {
     setDragId(null)
+    dragging.current = false
     const activeId = String(active.id)
     if (!over) {
       if (snapshot.current) setBlocks(snapshot.current, false)
@@ -151,11 +168,11 @@ function Editor({ show, setShow, songs }: { show: Show; setShow: (s: Show) => vo
         </label>
         <Link to={`/palco/show/${show.id}`} className={`btn btn-primary ${count ? '' : 'pointer-events-none opacity-40'}`}>▶ Tocar show</Link>
       </div>
-      <p className="mb-4 text-sm text-zinc-400">{count} músicas · {formatTotal(total)}</p>
+      <p className="mb-4 text-sm text-zinc-400">{count} músicas · {formatTotal(total)}{show.updatedBy && ` · última edição por ${show.updatedBy}`}</p>
 
       <DndContext sensors={sensors} collisionDetection={closestCorners}
         onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}
-        onDragCancel={() => { setDragId(null); if (snapshot.current) setBlocks(snapshot.current, false) }}>
+        onDragCancel={() => { setDragId(null); dragging.current = false; if (snapshot.current) setBlocks(snapshot.current, false) }}>
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
           <aside className="rounded-lg bg-zinc-900 p-3 md:sticky md:top-16 md:max-h-[calc(100dvh-5rem)] md:overflow-y-auto">
             <h2 className="mb-2 font-semibold">Biblioteca</h2>

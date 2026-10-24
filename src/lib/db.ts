@@ -1,6 +1,15 @@
 import Dexie, { type EntityTable } from 'dexie'
 
-export interface Song {
+/** Campos de controle da sincronização com a nuvem */
+interface SyncFields {
+  /** 1 = alterado neste aparelho e ainda não enviado */
+  dirty?: 0 | 1
+  /** Excluído aqui, aguardando envio da exclusão */
+  deleted?: boolean
+  updatedBy?: string
+}
+
+export interface Song extends SyncFields {
   id: string
   title: string
   artist: string
@@ -11,6 +20,12 @@ export interface Song {
   patch: string
   notes: string
   fileName: string
+  /** Versão do PDF salva neste aparelho */
+  fileVersion?: number
+  /** Versão do PDF disponível na nuvem */
+  remoteFileVersion?: number
+  /** 1 = PDF novo/trocado aqui, ainda não enviado */
+  pdfDirty?: 0 | 1
   createdAt: number
   updatedAt: number
 }
@@ -31,7 +46,7 @@ export interface Block {
   entries: SetEntry[]
 }
 
-export interface Show {
+export interface Show extends SyncFields {
   id: string
   name: string
   date: string
@@ -53,6 +68,30 @@ db.version(1).stores({
   shows: 'id, date',
 })
 
+// v2: sincronização. Tudo que já existia no aparelho é enviado para a nuvem.
+db.version(2)
+  .stores({
+    songs: 'id, title, artist, dirty',
+    files: 'songId',
+    shows: 'id, date, dirty',
+  })
+  .upgrade(async (tx) => {
+    await tx.table('songs').toCollection().modify((s: Song) => {
+      s.dirty = 1
+      s.pdfDirty = 1
+    })
+    await tx.table('shows').toCollection().modify((s: Show) => {
+      s.dirty = 1
+    })
+  })
+
+/** Avisa o motor de sincronização que há alteração local para enviar */
+export function notifyLocalChange() {
+  window.dispatchEvent(new Event('f80:local-change'))
+}
+
+export const isVisible = <T extends { deleted?: boolean }>(r: T) => !r.deleted
+
 // crypto.randomUUID só existe em contexto seguro (https/localhost).
 export function uid(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -66,25 +105,54 @@ export async function addSongFromFile(file: File): Promise<string> {
   await db.transaction('rw', db.songs, db.files, async () => {
     await db.songs.add({
       id, title, artist, key: '', patch: '', notes: '',
-      fileName: file.name, createdAt: now, updatedAt: now,
+      fileName: file.name, createdAt: now, updatedAt: now, dirty: 1, pdfDirty: 1,
     })
     await db.files.add({ songId: id, blob: file })
   })
+  notifyLocalChange()
   return id
 }
 
+export async function updateSong(id: string, changes: Partial<Song>) {
+  await db.songs.update(id, { ...changes, updatedAt: Date.now(), dirty: 1 })
+  notifyLocalChange()
+}
+
+export async function replaceSongPdf(id: string, file: File) {
+  await db.transaction('rw', db.songs, db.files, async () => {
+    await db.files.put({ songId: id, blob: file })
+    await db.songs.update(id, { fileName: file.name, updatedAt: Date.now(), dirty: 1, pdfDirty: 1 })
+  })
+  notifyLocalChange()
+}
+
 export async function deleteSong(id: string) {
+  const now = Date.now()
   await db.transaction('rw', db.songs, db.files, db.shows, async () => {
-    await db.songs.delete(id)
+    await db.songs.update(id, { deleted: true, dirty: 1, updatedAt: now })
     await db.files.delete(id)
     // Remove a música de todos os shows
     await db.shows.toCollection().modify((show) => {
+      if (!show.blocks.some((b) => b.entries.some((e) => e.songId === id))) return
       show.blocks = show.blocks.map((b) => ({
         ...b,
         entries: b.entries.filter((e) => e.songId !== id),
       }))
+      show.updatedAt = now
+      show.dirty = 1
     })
   })
+  notifyLocalChange()
+}
+
+export async function saveShow(show: Show) {
+  await db.shows.put({ ...show, dirty: 1 })
+  notifyLocalChange()
+}
+
+export async function deleteShow(id: string) {
+  await db.shows.update(id, { deleted: true, dirty: 1, updatedAt: Date.now() })
+  notifyLocalChange()
 }
 
 export function newShow(): Show {
@@ -107,6 +175,7 @@ export function duplicateShow(show: Show): Show {
   const now = Date.now()
   return {
     ...show,
+    updatedBy: undefined,
     id: uid(),
     name: `${show.name} (cópia)`,
     blocks: show.blocks.map((b) => ({

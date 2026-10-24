@@ -4,6 +4,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  // Em desenvolvimento, a API roda com `npx wrangler dev` na porta 8787
+  server: { proxy: { '/api': 'http://localhost:8787' } },
   plugins: [
     react(),
     tailwindcss(),
@@ -31,6 +33,8 @@ export default defineConfig({
         // o worker do pdf.js passa de 2 MB
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         navigateFallback: '/index.html',
+        // A API nunca é servida pelo cache do app
+        navigateFallbackDenylist: [/^\/api\//],
       },
     }),
   ],

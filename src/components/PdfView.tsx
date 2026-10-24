@@ -24,7 +24,7 @@ function useElementWidth(ref: React.RefObject<HTMLElement | null>) {
   return width
 }
 
-export function PdfView({ songId, invert = false }: { songId: string; invert?: boolean }) {
+export function PdfView({ songId, version, invert = false }: { songId: string; version?: number; invert?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   const width = useElementWidth(ref)
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null)
@@ -40,7 +40,8 @@ export function PdfView({ songId, invert = false }: { songId: string; invert?: b
     return () => {
       alive = false
     }
-  }, [songId])
+    // version muda quando a sincronização baixa um PDF novo
+  }, [songId, version])
 
   return (
     <div ref={ref} className="w-full">

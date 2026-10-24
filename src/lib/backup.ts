@@ -1,4 +1,4 @@
-import { db, type Show, type Song } from './db'
+import { db, notifyLocalChange, type Show, type Song } from './db'
 
 // Até o MVP 2 (sincronização na nuvem), o backup é o jeito de levar
 // as músicas e shows de um aparelho para outro.
@@ -53,9 +53,11 @@ export async function importBackup(file: File): Promise<{ songs: number; shows: 
   const data = JSON.parse(await file.text()) as BackupFile
   if (data.app !== 'formula80-setlist') throw new Error('Arquivo não é um backup do Fórmula 80 Setlist')
   await db.transaction('rw', db.songs, db.shows, db.files, async () => {
-    await db.songs.bulkPut(data.songs)
-    await db.shows.bulkPut(data.shows)
+    // Marca tudo como pendente para subir para a nuvem
+    await db.songs.bulkPut(data.songs.map((s) => ({ ...s, dirty: 1 as const, pdfDirty: 1 as const })))
+    await db.shows.bulkPut(data.shows.map((s) => ({ ...s, dirty: 1 as const })))
     await db.files.bulkPut(data.files.map((f) => ({ songId: f.songId, blob: base64ToBlob(f.base64, f.type) })))
   })
+  notifyLocalChange()
   return { songs: data.songs.length, shows: data.shows.length }
 }

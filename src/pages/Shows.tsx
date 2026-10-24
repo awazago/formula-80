@@ -1,14 +1,14 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, duplicateShow, newShow } from '../lib/db'
+import { db, deleteShow, duplicateShow, isVisible, newShow, saveShow } from '../lib/db'
 
 export function Shows() {
-  const shows = useLiveQuery(() => db.shows.orderBy('date').reverse().toArray(), [])
+  const shows = useLiveQuery(() => db.shows.orderBy('date').reverse().filter(isVisible).toArray(), [])
   const navigate = useNavigate()
 
   async function create() {
     const show = newShow()
-    await db.shows.add(show)
+    await saveShow(show)
     navigate(`/shows/${show.id}`)
   }
 
@@ -33,7 +33,7 @@ export function Shows() {
               <Link to={`/shows/${s.id}`} className="min-w-0 flex-1">
                 <div className="truncate font-medium">{s.name}</div>
                 <div className="truncate text-sm text-zinc-400">
-                  {[formatDate(s.date), s.venue, `${s.blocks.length} blocos`, `${count} músicas`].filter(Boolean).join(' · ')}
+                  {[formatDate(s.date), s.venue, `${s.blocks.length} blocos`, `${count} músicas`, s.updatedBy && `editado por ${s.updatedBy}`].filter(Boolean).join(' · ')}
                 </div>
               </Link>
               <Link to={`/palco/show/${s.id}`} className="btn btn-primary">▶ Tocar</Link>
@@ -41,7 +41,7 @@ export function Shows() {
                 className="btn"
                 onClick={async () => {
                   const copy = duplicateShow(s)
-                  await db.shows.add(copy)
+                  await saveShow(copy)
                   navigate(`/shows/${copy.id}`)
                 }}
               >
@@ -49,7 +49,7 @@ export function Shows() {
               </button>
               <button
                 className="btn text-red-400"
-                onClick={() => confirm(`Excluir o show "${s.name}"?`) && db.shows.delete(s.id)}
+                onClick={() => confirm(`Excluir o show "${s.name}" para toda a banda?`) && deleteShow(s.id)}
               >
                 Excluir
               </button>

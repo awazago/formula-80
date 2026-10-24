@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import useEmblaCarousel from 'embla-carousel-react'
-import { db, type Song } from '../lib/db'
+import { db, isVisible, type Song } from '../lib/db'
 import { PdfView } from '../components/PdfView'
 import { usePref } from '../lib/prefs'
 
@@ -18,14 +18,16 @@ export function ShowStage() {
   const { id } = useParams()
   const [params] = useSearchParams()
   const show = useLiveQuery(() => db.shows.get(id!), [id])
-  const songs = useLiveQuery(() => db.songs.toArray(), [])
+  const songs = useLiveQuery(() => db.songs.filter(isVisible).toArray(), [])
 
   const items = useMemo<StageItem[]>(() => {
-    if (!show) return []
-    return show.blocks.flatMap((b) =>
-      b.entries.map((e, i) => ({ songId: e.songId, blockName: b.name, pos: i + 1, blockSize: b.entries.length })),
-    )
-  }, [show])
+    if (!show || !songs) return []
+    const exists = new Set(songs.map((s) => s.id))
+    return show.blocks.flatMap((b) => {
+      const entries = b.entries.filter((e) => exists.has(e.songId))
+      return entries.map((e, i) => ({ songId: e.songId, blockName: b.name, pos: i + 1, blockSize: entries.length }))
+    })
+  }, [show, songs])
 
   if (show === undefined || songs === undefined) return <Loading />
   if (!show || items.length === 0)
@@ -184,7 +186,7 @@ function Stage({
             >
               {/* Só mantém renderizadas a atual, a anterior e a próxima */}
               {Math.abs(i - index) <= 1 ? (
-                <PdfView songId={item.songId} invert={invert} />
+                <PdfView songId={item.songId} version={songMap.get(item.songId)?.fileVersion} invert={invert} />
               ) : (
                 <div className="h-full" />
               )}
